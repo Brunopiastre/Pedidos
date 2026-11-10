@@ -37,7 +37,10 @@
 
   .lista{display:flex;flex-direction:column;gap:8px;margin:0;padding:0;list-style:none}
   .item{display:flex;align-items:center;gap:10px;background:var(--card);border:1px solid var(--line);
-    border-radius:16px;padding:10px 10px 10px 8px;transition:background .2s,border-color .2s}
+    border-radius:16px;padding:10px 10px 10px 8px;transition:background .2s,border-color .2s,transform .15s ease;
+    position:relative;-webkit-user-select:none;user-select:none;-webkit-touch-callout:none}
+  .item.arrastrando{z-index:10;border-color:var(--accent);box-shadow:0 14px 30px rgba(0,0,0,.28);transition:none;opacity:.97}
+  .hint{text-align:center;color:var(--muted);font-size:.78rem;margin-top:12px}
   .editar{background:none;border:0;color:#b5afa5;font-size:1.05rem;padding:10px 8px;border-radius:8px}
   .info{flex:1;min-width:0}
   .nombre{font-weight:700;font-size:1.08rem;overflow-wrap:anywhere}
@@ -56,6 +59,18 @@
   .item.hecho .tipo{background:rgba(255,255,255,.95)}
   .item.hecho .check{background:#fff;border-color:#fff;color:var(--extra)}
 
+  .caja{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:6px 14px;margin-top:18px}
+  .caja h3{margin:12px 0 4px;font-size:.8rem;color:var(--muted);text-transform:uppercase;letter-spacing:.06em}
+  .fc{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px 0;border-top:1px solid var(--line)}
+  .caja h3 + .fc{border-top:0}
+  .fc>span{font-weight:600;font-size:.98rem}
+  .monto{display:flex;align-items:center;gap:6px;background:#faf8f4;border:1.5px solid var(--line);border-radius:12px;padding:0 12px;width:150px}
+  .monto:focus-within{border-color:var(--accent)}
+  .monto i{font-style:normal;color:var(--muted);font-weight:700}
+  .monto input[type=text]{border:0;background:none;padding:12px 0;text-align:right;font-size:1.15rem;font-weight:800;width:100%;min-width:0}
+  .auto{text-align:right}
+  .auto b{display:block;font-size:1.3rem}
+  .auto small{color:var(--muted);font-size:.78rem}
   .vacio{text-align:center;color:var(--muted);padding:44px 10px;line-height:1.5}
   .reiniciar{display:block;margin:22px auto 0;background:none;border:1px solid var(--line);color:var(--muted);
     border-radius:12px;padding:12px 18px;font-size:.88rem;font-weight:600}
@@ -132,6 +147,17 @@
   </section>
 
   <ul class="lista" id="lista"></ul>
+  <div class="hint" id="hint" hidden>Mantené apretado un pedido y arrastralo para ordenar el reparto.</div>
+  <section class="caja">
+    <h3>Resumen del día</h3>
+    <div class="fc"><span>Plata ingresada</span>
+      <div class="monto"><i>$</i><input type="text" id="inPlata" inputmode="decimal" placeholder="0" autocomplete="off"></div></div>
+    <div class="fc"><span>Huevos totales<br><small style="color:var(--muted);font-weight:500">se calcula solo</small></span>
+      <div class="auto"><b id="totCajones">0 cajones</b><small id="totDesglose"></small></div></div>
+    <div class="fc"><span>Nafta cargada</span>
+      <div class="monto"><i>$</i><input type="text" id="inNafta" inputmode="decimal" placeholder="0" autocomplete="off"></div></div>
+  </section>
+
   <button class="reiniciar" id="btnReiniciar" hidden>Reiniciar día</button>
 </div>
 
@@ -217,6 +243,10 @@ let pedidos = [];   // {id, nombre, cant, tipo:'extra'|'super', hecho, t}
 let editId = null;
 let tipoSel = "extra";
 let remoto = null;
+let arrastrando = false, renderPend = false;
+const LS_RES = "pedidos_resumen_v1";
+let resumen = { plata: 0, nafta: 0 };
+try { const r = JSON.parse(localStorage.getItem(LS_RES)); if (r) resumen = { plata: +r.plata || 0, nafta: +r.nafta || 0 }; } catch {}
 
 /* ---------- formato de cantidades: 0.5 -> ½, 1.5 -> 1½ ---------- */
 function fmt(n){
@@ -245,8 +275,8 @@ function quitar(id){
 }
 function reiniciar(){
   const ids = pedidos.map(p => p.id);
-  pedidos = [];
-  guardarLocal(); render();
+  pedidos = []; resumen = { plata: 0, nafta: 0 };
+  guardarLocal(); guardarRes(); render();
   if (remoto) remoto.delMany(ids);
 }
 
@@ -267,6 +297,7 @@ function pintarSugs(){
 
 /* ---------- render ---------- */
 function render(){
+  if (arrastrando){ renderPend = true; return; }
   const f = new Date().toLocaleDateString("es-AR",{weekday:"long",day:"numeric",month:"long"});
   $("fecha").textContent = f.charAt(0).toUpperCase()+f.slice(1);
 
@@ -296,8 +327,42 @@ function render(){
     </li>`).join("")
     : `<li class="vacio">Todavía no hay pedidos hoy.<br>Tocá <b>+ Pedido</b> para cargar el primero.</li>`;
 
-  $("btnReiniciar").hidden = total === 0;
+  const sum = arr => arr.reduce((a, p) => a + p.cant, 0);
+  const tot = sum(pedidos), ext = sum(pedidos.filter(p => p.tipo === "extra")), sup = sum(pedidos.filter(p => p.tipo === "super"));
+  $("totCajones").textContent = `${fmt(tot)} ${unidad(tot)}`;
+  $("totDesglose").textContent = tot ? `Extra ${fmt(ext)} · Súper ${fmt(sup)}` : "";
+  renderResumen();
+  $("btnReiniciar").hidden = total === 0 && !resumen.plata && !resumen.nafta;
+  $("hint").hidden = pedidos.filter(p => !p.hecho).length < 2;
 }
+
+
+/* ---------- plata y nafta del día ---------- */
+const fmtMonto = n => (n || 0).toLocaleString("es-AR", { maximumFractionDigits: 2 });
+const parseMonto = v => { const n = parseFloat(String(v).replace(/[^\d,.-]/g, "").replace(/\./g, "").replace(",", ".")); return isFinite(n) && n > 0 ? n : 0; };
+function renderResumen(){
+  [["inPlata", "plata"], ["inNafta", "nafta"]].forEach(([id, k]) => {
+    const el = $(id);
+    if (document.activeElement !== el) el.value = resumen[k] ? fmtMonto(resumen[k]) : "";
+  });
+}
+function guardarRes(){
+  try { localStorage.setItem(LS_RES, JSON.stringify(resumen)); } catch {}
+  if (remoto && remoto.setRes) remoto.setRes(resumen);
+}
+let tRes = 0;
+function cambioRes(){
+  resumen = { plata: parseMonto($("inPlata").value), nafta: parseMonto($("inNafta").value) };
+  guardarRes();
+  $("btnReiniciar").hidden = !pedidos.length && !resumen.plata && !resumen.nafta;
+}
+[["inPlata", "plata"], ["inNafta", "nafta"]].forEach(([id, k]) => {
+  const el = $(id);
+  el.addEventListener("focus", () => { el.value = resumen[k] ? String(resumen[k]).replace(".", ",") : ""; setTimeout(() => el.select(), 0); });
+  el.addEventListener("input", () => { clearTimeout(tRes); tRes = setTimeout(cambioRes, 500); });
+  el.addEventListener("blur", () => { clearTimeout(tRes); cambioRes(); renderResumen(); });
+  el.addEventListener("keydown", e => { if (e.key === "Enter") el.blur(); });
+});
 
 /* ---------- lista ---------- */
 $("lista").addEventListener("click", e => {
@@ -309,8 +374,112 @@ $("lista").addEventListener("click", e => {
   } else abrir(p);
 });
 $("btnReiniciar").addEventListener("click", () => {
-  if (confirm("¿Reiniciar el día? Se borran TODOS los pedidos de la lista.")) reiniciar();
+  if (confirm("¿Reiniciar el día? Se borran TODOS los pedidos y también la plata y la nafta.")) reiniciar();
 });
+
+
+/* ---------- ordenar arrastrando (mantener apretado) ---------- */
+(function(){
+  const lista = $("lista");
+  const HOLD = 350, GAP = 8;
+  let cand = null;   // {id, el, x, y, timer}
+  let d = null;      // arrastre activo
+
+  const docY = y => y + window.scrollY;
+
+  function armar(){
+    const el = cand.el;
+    const items = [...lista.querySelectorAll(".item:not(.hecho)")];
+    const idx0 = items.indexOf(el);
+    if (idx0 < 0 || items.length < 2){ cand = null; return; }
+    const rects = items.map(it => { const r = it.getBoundingClientRect(); return { top: docY(r.top), h: r.height }; });
+    d = { id: cand.id, el, items, rects, idx0, newIdx: idx0, grab: docY(cand.y), lastY: cand.y };
+    arrastrando = true;
+    el.classList.add("arrastrando");
+    if (navigator.vibrate) navigator.vibrate(18);
+    cand = null;
+    tick();
+  }
+
+  function mover(){
+    if (!d) return;
+    const dy = docY(d.lastY) - d.grab;
+    const me = d.rects[d.idx0];
+    d.el.style.transform = `translateY(${dy}px) scale(1.02)`;
+    const centro = me.top + me.h / 2 + dy;
+    let nuevo = 0;
+    d.items.forEach((it, k) => { if (k !== d.idx0 && d.rects[k].top + d.rects[k].h / 2 < centro) nuevo++; });
+    d.newIdx = nuevo;
+    const shift = me.h + GAP;
+    d.items.forEach((it, k) => {
+      if (k === d.idx0) return;
+      let t = 0;
+      if (d.idx0 < nuevo && k > d.idx0 && k <= nuevo) t = -shift;
+      else if (d.idx0 > nuevo && k >= nuevo && k < d.idx0) t = shift;
+      it.style.transform = t ? `translateY(${t}px)` : "";
+    });
+  }
+
+  let raf = 0;
+  function tick(){
+    if (!d) return;
+    const y = d.lastY, h = window.innerHeight;
+    if (y < 90) window.scrollBy(0, -12 - (90 - y) / 6);
+    else if (y > h - 120) window.scrollBy(0, 12 + (y - (h - 120)) / 6);
+    mover();
+    raf = requestAnimationFrame(tick);
+  }
+
+  function limpiar(){
+    cancelAnimationFrame(raf);
+    if (d){ d.items.forEach(it => { it.style.transform = ""; }); d.el.classList.remove("arrastrando"); }
+    d = null; arrastrando = false;
+  }
+
+  function soltar(confirmar){
+    if (cand){ clearTimeout(cand.timer); cand = null; return; }
+    if (!d) return;
+    const { id, idx0, newIdx, items } = d;
+    limpiar();
+    if (confirmar && newIdx !== idx0){
+      const ids = items.map(it => it.dataset.id).filter(x => x !== id);
+      ids.splice(newIdx, 0, id);
+      const obj = x => pedidos.find(p => p.id === x);
+      const yo = obj(id), prev = obj(ids[newIdx - 1]), next = obj(ids[newIdx + 1]);
+      if (yo){
+        if (prev && next && next.t - prev.t < 0.01){
+          const base = Date.now();
+          ids.forEach((x, i) => { const p = obj(x); if (p) upsert({ ...p, t: base + i * 1000 }); });
+        } else {
+          const t = prev && next ? (prev.t + next.t) / 2 : prev ? prev.t + 1000 : next ? next.t - 1000 : yo.t;
+          upsert({ ...yo, t });
+        }
+      }
+    }
+    renderPend = false; render();
+    window.__ignorarClick = Date.now();
+  }
+
+  lista.addEventListener("pointerdown", e => {
+    if (e.button && e.button !== 0) return;
+    if (e.target.closest("button")) return;
+    const el = e.target.closest(".item:not(.hecho)");
+    if (!el || d || cand) return;
+    cand = { id: el.dataset.id, el, x: e.clientX, y: e.clientY, pid: e.pointerId,
+             timer: setTimeout(armar, HOLD) };
+  });
+  window.addEventListener("pointermove", e => {
+    if (cand && e.pointerId === cand.pid){
+      if (Math.hypot(e.clientX - cand.x, e.clientY - cand.y) > 10){ clearTimeout(cand.timer); cand = null; }
+      else { cand.y = e.clientY; }
+    } else if (d){ d.lastY = e.clientY; }
+  });
+  window.addEventListener("pointerup", () => soltar(true));
+  window.addEventListener("pointercancel", () => soltar(false));
+  // mientras se arrastra, que la pantalla no se desplace con el dedo
+  document.addEventListener("touchmove", e => { if (d) e.preventDefault(); }, { passive: false });
+  lista.addEventListener("contextmenu", e => e.preventDefault());
+})();
 
 /* ---------- formulario ---------- */
 const dlg = $("dlg");
@@ -492,8 +661,18 @@ if (FIREBASE_CONFIG.apiKey && FIREBASE_CONFIG.projectId){
     remoto = {
       set: p => setDoc(doc(col, p.id), p).catch(()=>{}),
       del: id => deleteDoc(doc(col, id)).catch(()=>{}),
+      setRes: r => setDoc(doc(db, "resumen", "hoy"), { plata: r.plata, nafta: r.nafta }).catch(()=>{}),
       delMany: ids => { const b = writeBatch(db); ids.forEach(id => b.delete(doc(col, id))); b.commit().catch(()=>{}); }
     };
+
+    onSnapshot(doc(db, "resumen", "hoy"), snap => {
+      if (!snap.exists()) return;
+      const v = snap.data();
+      resumen = { plata: +v.plata || 0, nafta: +v.nafta || 0 };
+      try { localStorage.setItem(LS_RES, JSON.stringify(resumen)); } catch {}
+      renderResumen();
+      $("btnReiniciar").hidden = !pedidos.length && !resumen.plata && !resumen.nafta;
+    }, () => {});
 
     // si había pedidos solo-locales de antes y la nube está vacía, se suben
     let primera = true;
