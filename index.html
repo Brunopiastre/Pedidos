@@ -14,6 +14,9 @@
   }
   *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
   [hidden]{display:none!important}
+  /* en el celular no se ven los lapicitos: se edita tocando la cantidad / la hora */
+  @media (hover:none) and (pointer:coarse){ .editar, .t-lapiz{display:none!important} }
+  .linea,#tSub{cursor:pointer}
   html,body{margin:0;background:var(--bg);color:var(--text);
     font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
   body{min-height:100vh;min-height:100dvh;display:flex;justify-content:center}
@@ -106,6 +109,20 @@
   .t-edit{display:flex;gap:10px;margin-top:10px;border-top:1px solid var(--line);padding-top:10px}
   .t-edit label{flex:1;margin:0;font-size:.78rem}
   .t-edit input[type=time]{width:100%;margin-top:4px;background:#faf8f4;border:1.5px solid var(--line);border-radius:10px;padding:10px;font-size:1.05rem;color:var(--text);font-family:inherit}
+  .precios{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:12px 14px;margin-bottom:12px}
+  .p-cab{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:8px}
+  .p-titulo{font-weight:700}
+  .p-edit{background:none;border:1.5px solid var(--line);color:var(--muted);border-radius:8px;padding:6px 10px;font-size:.78rem;font-weight:600;font-family:inherit}
+  .p-vista{display:flex;gap:8px}
+  .p-tile{flex:1;border-radius:12px;padding:8px 12px;font-size:.8rem;font-weight:600}
+  .p-tile b{display:block;font-size:1.2rem}
+  .p-tile.extra{background:var(--extra-bg);color:#166534}
+  .p-tile.super{background:var(--super-bg);color:#5b21b6}
+  .p-form{display:flex;gap:10px;flex-wrap:wrap}
+  .p-form label{flex:1;min-width:130px;margin:0;font-size:.8rem}
+  .p-form .monto{width:100%;margin:4px 0 0}
+  .p-acc{display:flex;gap:8px;width:100%}
+  .p-acc button{flex:1;padding:13px;border-radius:12px;border:0;font-size:.95rem;font-weight:700;font-family:inherit}
   .vacio{text-align:center;color:var(--muted);padding:44px 10px;line-height:1.5}
   .reiniciar{display:block;margin:22px auto 0;background:none;border:1px solid var(--line);color:var(--muted);
     border-radius:12px;padding:12px 18px;font-size:.88rem;font-weight:600}
@@ -189,6 +206,23 @@
     </div>
   </section>
 
+  <section class="precios">
+    <div class="p-cab"><span class="p-titulo">Precio por cajón</span>
+      <button class="p-edit" id="btnPrecios">Cambiar</button></div>
+    <div class="p-vista" id="pVista">
+      <div class="p-tile extra">Extra<b id="pvExtra">—</b></div>
+      <div class="p-tile super">Súper<b id="pvSuper">—</b></div>
+    </div>
+    <div class="p-form" id="pForm" hidden>
+      <label>Extra<div class="monto"><i>$</i><input type="text" id="inPExtra" inputmode="decimal" placeholder="0" autocomplete="off"></div></label>
+      <label>Súper<div class="monto"><i>$</i><input type="text" id="inPSuper" inputmode="decimal" placeholder="0" autocomplete="off"></div></label>
+      <div class="p-acc">
+        <button class="cancelar" id="btnPCancel" type="button">Cancelar</button>
+        <button class="guardar" id="btnPOk" type="button" style="flex:2">Guardar precios</button>
+      </div>
+    </div>
+  </section>
+
   <section class="resumen">
     <div class="fila"><span id="progTxt">0 de 0 entregados</span><span id="progPct">0%</span></div>
     <div class="bar"><i id="progBar"></i></div>
@@ -196,7 +230,7 @@
   </section>
 
   <ul class="lista" id="lista"></ul>
-  <div class="hint" id="hint" hidden>Mantené apretado un pedido y arrastralo para ordenar el reparto.</div>
+  <div class="hint" id="hint" hidden>Mantené apretado un pedido para ordenarlo. Tocá la cantidad para editarlo.</div>
   <section class="caja">
     <h3>Cierre del día</h3>
     <div class="fc" data-fila="plata"><span>Plata ingresada</span>
@@ -212,6 +246,8 @@
   <section class="caja total">
     <div class="fc"><span>Huevos totales<br><small style="color:var(--muted);font-weight:500">se calcula solo</small></span>
       <div class="auto"><b id="totCajones">0 cajones</b><small id="totDesglose"></small></div></div>
+    <div class="fc" id="filaCobrar" hidden><span>A cobrar<br><small style="color:var(--muted);font-weight:500">según los precios</small></span>
+      <div class="auto"><b id="totCobrar">$ 0</b></div></div>
   </section>
 
   <button class="reiniciar" id="btnReiniciar" hidden>Reiniciar día</button>
@@ -314,6 +350,9 @@ let remoto = null;
 let arrastrando = false, renderPend = false;
 const LS_RES = "pedidos_resumen_v1";
 let resumen = { plata: 0, nafta: 0 };
+const LS_PRECIOS = "pedidos_precios_v1";
+let precios = { extra: 0, super: 0 };
+try { const r = JSON.parse(localStorage.getItem(LS_PRECIOS)); if (r) precios = { extra: +r.extra || 0, super: +r.super || 0 }; } catch {}
 const LS_CIERRE = "pedidos_cierre_v1";
 let cierre = { plata: false, nafta: false, remitos: false };
 try { const r = JSON.parse(localStorage.getItem(LS_CIERRE)); if (r) cierre = { plata: !!r.plata, nafta: !!r.nafta, remitos: !!r.remitos }; } catch {}
@@ -435,7 +474,7 @@ function render(){
         <div class="nombre">${esc(primero.nombre)}</div>
         ${dirG && !esUbicTecnica(dirG) ? `<div class="dir">${esc(dirG)}</div>` : ""}
         ${g.items.map(p => `
-        <div class="linea"><span class="cant"><b>${fmt(p.cant)}</b> ${unidad(p.cant)}</span>
+        <div class="linea" data-id="${p.id}"><span class="cant"><b>${fmt(p.cant)}</b> ${unidad(p.cant)}</span>
           <span class="tipo ${p.tipo}">${p.tipo === "extra" ? "EXTRA" : "SÚPER"}</span>
           <button class="editar" data-act="editar" data-id="${p.id}" aria-label="Editar">✎</button></div>
         ${p.nota ? `<div class="nota">📝 ${esc(p.nota)}</div>` : ""}`).join("")}
@@ -451,7 +490,10 @@ function render(){
   const tot = sum(pedidos), ext = sum(pedidos.filter(p => p.tipo === "extra")), sup = sum(pedidos.filter(p => p.tipo === "super"));
   $("totCajones").textContent = `${fmt(tot)} ${unidad(tot)}`;
   $("totDesglose").textContent = tot ? `Extra ${fmt(ext)} · Súper ${fmt(sup)}` : "";
-  renderResumen(); renderTurno(); renderCierre();
+  const aCobrar = ext * precios.extra + sup * precios.super;
+  $("filaCobrar").hidden = !(aCobrar > 0);
+  $("totCobrar").textContent = "$ " + fmtMonto(aCobrar);
+  renderResumen(); renderTurno(); renderCierre(); renderPrecios();
   $("btnReiniciar").hidden = total === 0 && !resumen.plata && !resumen.nafta;
   $("hint").hidden = pedidos.filter(p => !p.hecho).length < 2;
 }
@@ -484,6 +526,31 @@ function cambioRes(){
   el.addEventListener("keydown", e => { if (e.key === "Enter") el.blur(); });
 });
 
+
+/* ---------- precios por cajón (se cambian poco) ---------- */
+function renderPrecios(){
+  $("pvExtra").textContent = precios.extra ? "$ " + fmtMonto(precios.extra) : "Sin definir";
+  $("pvSuper").textContent = precios.super ? "$ " + fmtMonto(precios.super) : "Sin definir";
+}
+function guardarPrecios(){
+  try { localStorage.setItem(LS_PRECIOS, JSON.stringify(precios)); } catch {}
+  if (remoto && remoto.setPrecios) remoto.setPrecios(precios);
+  renderPrecios(); render();
+}
+function editorPrecios(abrir){
+  $("pForm").hidden = !abrir; $("pVista").hidden = abrir; $("btnPrecios").hidden = abrir;
+  if (abrir){
+    $("inPExtra").value = precios.extra ? String(precios.extra).replace(".", ",") : "";
+    $("inPSuper").value = precios.super ? String(precios.super).replace(".", ",") : "";
+    setTimeout(() => $("inPExtra").focus(), 30);
+  }
+}
+$("btnPrecios").addEventListener("click", () => editorPrecios(true));
+$("btnPCancel").addEventListener("click", () => editorPrecios(false));
+$("btnPOk").addEventListener("click", () => {
+  precios = { extra: parseMonto($("inPExtra").value), super: parseMonto($("inPSuper").value) };
+  guardarPrecios(); editorPrecios(false);
+});
 
 /* ---------- checklist de cierre ---------- */
 function renderCierre(){
@@ -539,7 +606,9 @@ $("btnTurno").addEventListener("click", () => {
   else if (!turno.fin) turno = { ...turno, fin: Date.now() };
   guardarTurno();
 });
-$("btnTEdit").addEventListener("click", () => { $("tEdit").hidden = !$("tEdit").hidden; });
+const alternarTEdit = () => { if (turno.inicio) $("tEdit").hidden = !$("tEdit").hidden; };
+$("btnTEdit").addEventListener("click", alternarTEdit);
+$("tSub").addEventListener("click", alternarTEdit);
 function conHora(base, v){ const [h, m] = v.split(":").map(Number); const d = new Date(base); d.setHours(h, m, 0, 0); return d.getTime(); }
 $("inT1").addEventListener("change", () => {
   const v = $("inT1").value;
@@ -562,7 +631,14 @@ setInterval(renderTurno, 30000);
 $("lista").addEventListener("click", e => {
   const a = e.target.closest("a.mapa");
   if (a){ if (Date.now() - (window.__ignorarClick || 0) < 500) e.preventDefault(); return; }
-  const btn = e.target.closest("button[data-act]"); if (!btn) return;
+  const btn = e.target.closest("button[data-act]");
+  if (!btn){
+    const ln = e.target.closest(".linea");
+    if (ln && Date.now() - (window.__ignorarClick || 0) > 500){
+      const p = pedidos.find(x => x.id === ln.dataset.id); if (p) abrir(p);
+    }
+    return;
+  }
   if (btn.dataset.act === "toggle"){
     const ids = btn.closest(".item").dataset.ids.split(",");
     const docs = pedidos.filter(x => ids.includes(x.id));
@@ -887,6 +963,7 @@ if (FIREBASE_CONFIG.apiKey && FIREBASE_CONFIG.projectId){
       setRes: r => setDoc(doc(db, "resumen", "hoy"), { plata: r.plata, nafta: r.nafta }).catch(()=>{}),
       setTurno: t => setDoc(doc(db, "resumen", "turno"), { inicio: t.inicio, fin: t.fin }).catch(()=>{}),
       setCierre: c => setDoc(doc(db, "resumen", "cierre"), { plata: !!c.plata, nafta: !!c.nafta, remitos: !!c.remitos }).catch(()=>{}),
+      setPrecios: p => setDoc(doc(db, "resumen", "precios"), { extra: p.extra, super: p.super }).catch(()=>{}),
       delMany: ids => { const b = writeBatch(db); ids.forEach(id => b.delete(doc(col, id))); b.commit().catch(()=>{}); }
     };
 
@@ -913,6 +990,14 @@ if (FIREBASE_CONFIG.apiKey && FIREBASE_CONFIG.projectId){
       cierre = { plata: !!v.plata, nafta: !!v.nafta, remitos: !!v.remitos };
       try { localStorage.setItem(LS_CIERRE, JSON.stringify(cierre)); } catch {}
       renderCierre();
+    }, () => {});
+
+    onSnapshot(doc(db, "resumen", "precios"), snap => {
+      if (!snap.exists()) return;
+      const v = snap.data();
+      precios = { extra: +v.extra || 0, super: +v.super || 0 };
+      try { localStorage.setItem(LS_PRECIOS, JSON.stringify(precios)); } catch {}
+      renderPrecios(); render();
     }, () => {});
 
     // si había pedidos solo-locales de antes y la nube está vacía, se suben
