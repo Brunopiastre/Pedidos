@@ -1,0 +1,511 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#f6f4ef">
+<title>Pedidos del día</title>
+<style>
+  :root{
+    --bg:#f6f4ef; --card:#ffffff; --line:#e6e1d8; --text:#1f1d1a; --muted:#7c766d;
+    --extra:#16a34a; --extra-bg:#dcfce7;
+    --super:#7c3aed; --super-bg:#ede9fe;
+    --accent:#1f1d1a; --danger:#dc2626;
+  }
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+  html,body{margin:0;background:var(--bg);color:var(--text);
+    font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+  body{min-height:100vh;min-height:100dvh;display:flex;justify-content:center}
+  .app{width:100%;max-width:560px;padding:calc(env(safe-area-inset-top) + 16px) 14px calc(env(safe-area-inset-bottom) + 100px)}
+
+  header{display:flex;align-items:flex-end;justify-content:space-between;margin-bottom:14px;gap:8px}
+  h1{margin:0;font-size:1.55rem;line-height:1.1}
+  .fecha{color:var(--muted);font-size:.88rem;margin-top:4px}
+  .sync{font-size:.7rem;color:var(--muted);display:flex;align-items:center;gap:6px;white-space:nowrap}
+  .dot{width:8px;height:8px;border-radius:50%;background:#bbb}
+  .dot.on{background:var(--extra)}
+
+  .resumen{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:14px;margin-bottom:14px}
+  .resumen .fila{display:flex;justify-content:space-between;font-size:.92rem;margin-bottom:8px;font-weight:600}
+  .bar{height:9px;background:#ece8df;border-radius:99px;overflow:hidden}
+  .bar>i{display:block;height:100%;width:0;background:var(--extra);transition:width .3s}
+  .faltan{display:flex;gap:8px;margin-top:12px;flex-wrap:wrap}
+  .falta{flex:1;min-width:120px;border-radius:12px;padding:8px 12px;font-size:.8rem;font-weight:600}
+  .falta b{display:block;font-size:1.25rem}
+  .falta.extra{background:var(--extra-bg);color:#166534}
+  .falta.super{background:var(--super-bg);color:#5b21b6}
+
+  .lista{display:flex;flex-direction:column;gap:8px;margin:0;padding:0;list-style:none}
+  .item{display:flex;align-items:center;gap:10px;background:var(--card);border:1px solid var(--line);
+    border-radius:16px;padding:10px 10px 10px 8px;transition:background .2s,border-color .2s}
+  .editar{background:none;border:0;color:#b5afa5;font-size:1.05rem;padding:10px 8px;border-radius:8px}
+  .info{flex:1;min-width:0}
+  .nombre{font-weight:700;font-size:1.08rem;overflow-wrap:anywhere}
+  .cant{color:var(--muted);font-size:.92rem;margin-top:2px}
+  .cant b{color:var(--text);font-size:1.02rem}
+  .tipo{flex:none;font-size:.8rem;font-weight:700;border-radius:99px;padding:6px 12px;letter-spacing:.02em}
+  .tipo.extra{background:var(--extra-bg);color:#166534}
+  .tipo.super{background:var(--super-bg);color:#5b21b6}
+  .check{width:56px;height:56px;flex:none;border-radius:50%;border:2px solid var(--line);background:#faf8f4;
+    color:#cfc9be;font-size:1.7rem;font-weight:700;display:grid;place-items:center;transition:all .15s}
+  .check:active{transform:scale(.9)}
+
+  /* entregado: se pone verde */
+  .item.hecho{background:var(--extra);border-color:var(--extra)}
+  .item.hecho .nombre,.item.hecho .cant,.item.hecho .cant b,.item.hecho .editar{color:#fff}
+  .item.hecho .tipo{background:rgba(255,255,255,.95)}
+  .item.hecho .check{background:#fff;border-color:#fff;color:var(--extra)}
+
+  .vacio{text-align:center;color:var(--muted);padding:44px 10px;line-height:1.5}
+  .reiniciar{display:block;margin:22px auto 0;background:none;border:1px solid var(--line);color:var(--muted);
+    border-radius:12px;padding:12px 18px;font-size:.88rem;font-weight:600}
+
+  .fabs{position:fixed;right:16px;bottom:calc(env(safe-area-inset-bottom) + 16px);display:flex;gap:10px;align-items:center}
+  .wa{height:62px;padding:0 18px;border-radius:99px;border:1.5px solid var(--line);background:#fff;color:var(--text);
+    font-size:.95rem;font-weight:700;box-shadow:0 6px 16px rgba(0,0,0,.12)}
+  .wa:active{transform:scale(.95)}
+  .fab{height:62px;padding:0 24px;border-radius:99px;
+    border:0;background:var(--accent);color:#fff;font-size:1.05rem;font-weight:700;box-shadow:0 8px 22px rgba(0,0,0,.25);
+    display:flex;align-items:center;gap:8px}
+  .fab span{font-size:1.7rem;line-height:1;margin-top:-2px}
+  .fab:active{transform:scale(.95)}
+
+  dialog{border:0;border-radius:22px 22px 0 0;background:var(--card);color:var(--text);
+    padding:18px 16px calc(env(safe-area-inset-bottom) + 18px);width:100%;max-width:560px;margin:auto auto 0}
+  dialog{max-height:92dvh;overflow:auto}
+  dialog::backdrop{background:rgba(0,0,0,.45)}
+  textarea{width:100%;min-height:110px;background:#faf8f4;border:1.5px solid var(--line);color:var(--text);
+    border-radius:12px;padding:12px;font-size:1rem;font-family:inherit;outline:none;resize:vertical;margin-top:10px}
+  textarea:focus{border-color:var(--accent)}
+  .ayuda{font-size:.78rem;color:var(--muted);margin-top:6px}
+  .wbtn{padding:11px;border-radius:12px;border:2px solid var(--line);background:#faf8f4;font-size:.95rem;font-weight:800;color:var(--muted)}
+  .wbtn.extra.sel{background:var(--extra);border-color:var(--extra);color:#fff}
+  .wbtn.super.sel{background:var(--super);border-color:var(--super);color:#fff}
+  .wrow{display:grid;grid-template-columns:1fr 54px auto 30px;gap:6px;align-items:center;margin-top:8px}
+  .wrow input[type=text]{width:100%;min-width:0;padding:11px 10px;font-size:1rem;border-radius:10px}
+  .wrow input.wc{text-align:center;font-weight:700;padding:11px 2px}
+  .wrow.dud input[type=text]{border-color:#f59e0b;background:#fffbeb}
+  .wt{border:0;border-radius:99px;padding:10px 11px;font-weight:800;font-size:.72rem;letter-spacing:.02em}
+  .wt.extra{background:var(--extra-bg);color:#166534}
+  .wt.super{background:var(--super-bg);color:#5b21b6}
+  .wx{background:none;border:0;color:#b5afa5;font-size:1.4rem;padding:2px}
+  .wvacio{color:var(--muted);font-size:.9rem;text-align:center;padding:16px 0}
+  dialog h2{margin:0 0 6px;font-size:1.15rem}
+  label{display:block;font-size:.8rem;color:var(--muted);margin:14px 0 6px;font-weight:600}
+  input[type=text]{width:100%;background:#faf8f4;border:1.5px solid var(--line);color:var(--text);
+    border-radius:12px;padding:14px;font-size:1.08rem;outline:none}
+  input:focus{border-color:var(--accent)}
+  .paso{display:flex;align-items:center;gap:10px}
+  .paso button{width:56px;height:56px;border-radius:14px;border:1.5px solid var(--line);background:#faf8f4;color:var(--text);font-size:1.6rem}
+  .paso button:active{background:#ece8df}
+  .paso input{text-align:center;font-weight:800;font-size:1.4rem}
+  .sugs{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px}
+  .rapidos{display:grid;grid-template-columns:repeat(9,1fr);gap:4px;margin-top:10px}
+  .rapidos .chip{padding:12px 0;font-size:.92rem;border-radius:12px;text-align:center}
+  .chip{border:1.5px solid var(--line);background:#faf8f4;color:var(--text);border-radius:99px;padding:9px 16px;font-size:.95rem;font-weight:600}
+  .chip.sel{background:var(--accent);color:#fff;border-color:var(--accent)}
+  .tipos{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+  .tbtn{padding:16px;border-radius:14px;border:2px solid var(--line);background:#faf8f4;font-size:1.05rem;font-weight:800;color:var(--muted)}
+  .tbtn.extra.sel{background:var(--extra);border-color:var(--extra);color:#fff}
+  .tbtn.super.sel{background:var(--super);border-color:var(--super);color:#fff}
+  .acciones{display:flex;gap:10px;margin-top:20px;position:sticky;bottom:calc(env(safe-area-inset-bottom) * -1 - 18px);background:var(--card);padding:10px 0 0}
+  .acciones button{flex:1;padding:16px;border-radius:14px;border:0;font-size:1rem;font-weight:700}
+  .cancelar{background:#ece8df;color:var(--text)}
+  .eliminar{background:#fee2e2;color:var(--danger)}
+  .guardar{background:var(--accent);color:#fff;flex:2!important}
+</style>
+</head>
+<body>
+<div class="app">
+  <header>
+    <div>
+      <h1>Pedidos del día</h1>
+      <div class="fecha" id="fecha"></div>
+    </div>
+    <div class="sync"><span class="dot" id="dot"></span><span id="syncTxt">Solo este dispositivo</span></div>
+  </header>
+
+  <section class="resumen">
+    <div class="fila"><span id="progTxt">0 de 0 entregados</span><span id="progPct">0%</span></div>
+    <div class="bar"><i id="progBar"></i></div>
+    <div class="faltan" id="faltan"></div>
+  </section>
+
+  <ul class="lista" id="lista"></ul>
+  <button class="reiniciar" id="btnReiniciar" hidden>Reiniciar día</button>
+</div>
+
+<div class="fabs">
+  <button class="wa" id="btnWA">📋 WhatsApp</button>
+  <button class="fab" id="fab"><span>+</span> Pedido</button>
+</div>
+
+<dialog id="dlg">
+  <h2 id="dlgTitulo">Nuevo pedido</h2>
+
+  <label for="inNombre">Lugar</label>
+  <input type="text" id="inNombre" placeholder="Ej: Ñan, Boloñesa…" autocomplete="off" autocapitalize="words">
+  <div class="sugs" id="sugs"></div>
+
+  <label>Cajones</label>
+  <div class="paso">
+    <button type="button" id="menos" aria-label="Menos">−</button>
+    <input type="text" id="inCant" inputmode="decimal" value="1">
+    <button type="button" id="mas" aria-label="Más">+</button>
+  </div>
+  <div class="rapidos" id="rapidos"></div>
+
+  <label>Tipo</label>
+  <div class="tipos">
+    <button type="button" class="tbtn extra" data-t="extra">Extra</button>
+    <button type="button" class="tbtn super" data-t="super">Súper</button>
+  </div>
+
+  <div class="acciones">
+    <button class="eliminar" id="btnEliminar" type="button" hidden>Eliminar</button>
+    <button class="cancelar" id="btnCancelar" type="button">Cancelar</button>
+    <button class="guardar" id="btnGuardar" type="button">Agregar</button>
+  </div>
+</dialog>
+
+<dialog id="dlgWA">
+  <h2>Pegar pedidos de WhatsApp</h2>
+  <button type="button" class="chip" id="btnPegar" style="margin-top:8px">📋 Pegar lo que copié</button>
+  <textarea id="taWA" placeholder="O pegá acá el mensaje…"></textarea>
+  <div class="ayuda">Si no pega solo: mantené apretado en el recuadro y tocá Pegar.</div>
+
+  <label>Los que no dicen Extra o Súper son:</label>
+  <div class="tipos">
+    <button type="button" class="wbtn extra" data-t="extra">Extra</button>
+    <button type="button" class="wbtn super" data-t="super">Súper</button>
+  </div>
+
+  <div id="waLista"></div>
+
+  <div class="acciones">
+    <button class="cancelar" id="btnWACancel" type="button">Cancelar</button>
+    <button class="guardar" id="btnWAok" type="button" disabled>Agregar</button>
+  </div>
+</dialog>
+
+<script type="module">
+/* ============================================================
+   SINCRONIZACIÓN ENTRE CELULARES (sin contraseña)
+   Config del proyecto Firebase "huevos". Todos los que abran el
+   link ven y marcan la misma lista en tiempo real (colección
+   "pedidos"). Si Firestore no deja escribir, la página sigue
+   funcionando en modo local.
+   ============================================================ */
+const FIREBASE_CONFIG = {
+  apiKey: "AIzaSyDsC3T38D3nC0VDYyk7UEx5glUlYEghlMo",
+  authDomain: "huevos-11ae5.firebaseapp.com",
+  projectId: "huevos-11ae5",
+  storageBucket: "huevos-11ae5.firebasestorage.app",
+  messagingSenderId: "1040086328999",
+  appId: "1:1040086328999:web:f6f65ca51e14b5e1f99d82"
+};
+
+const RAPIDOS = [0.5, 1, 1.5, 2, 2.5, 3, 3.5, 4, 4.5];
+const LS_KEY = "pedidos_v2";
+const LS_LUGARES = "pedidos_lugares_v2";
+
+const $ = id => document.getElementById(id);
+const uid = () => Date.now().toString(36)+Math.random().toString(36).slice(2,6);
+const esc = s => String(s).replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+
+let pedidos = [];   // {id, nombre, cant, tipo:'extra'|'super', hecho, t}
+let editId = null;
+let tipoSel = "extra";
+let remoto = null;
+
+/* ---------- formato de cantidades: 0.5 -> ½, 1.5 -> 1½ ---------- */
+function fmt(n){
+  const ent = Math.floor(n + 1e-9), fr = n - ent;
+  if (Math.abs(fr) < 1e-9) return String(ent);
+  if (Math.abs(fr - 0.5) < 1e-9) return (ent ? ent : "") + "½";
+  return String(Math.round(n*100)/100).replace(".", ",");
+}
+const unidad = n => n <= 1 ? "cajón" : "cajones";
+const parseCant = v => { const n = parseFloat(String(v).replace(",", ".")); return isFinite(n) && n > 0 ? n : NaN; };
+
+/* ---------- persistencia ---------- */
+function guardarLocal(){ try { localStorage.setItem(LS_KEY, JSON.stringify(pedidos)); } catch {} }
+function cargarLocal(){ try { return JSON.parse(localStorage.getItem(LS_KEY)) || []; } catch { return []; } }
+
+function upsert(p){
+  const i = pedidos.findIndex(x => x.id === p.id);
+  if (i >= 0) pedidos[i] = p; else pedidos.push(p);
+  guardarLocal(); render();
+  if (remoto) remoto.set(p);
+}
+function quitar(id){
+  pedidos = pedidos.filter(x => x.id !== id);
+  guardarLocal(); render();
+  if (remoto) remoto.del(id);
+}
+function reiniciar(){
+  const ids = pedidos.map(p => p.id);
+  pedidos = [];
+  guardarLocal(); render();
+  if (remoto) remoto.delMany(ids);
+}
+
+/* ---------- lugares usados (sugerencias) ---------- */
+function lugares(){ try { return JSON.parse(localStorage.getItem(LS_LUGARES)) || {}; } catch { return {}; } }
+function sumarLugar(n){
+  const l = lugares(); const k = n.trim();
+  l[k] = (l[k] || 0) + 1;
+  try { localStorage.setItem(LS_LUGARES, JSON.stringify(l)); } catch {}
+}
+function pintarSugs(){
+  const l = lugares();
+  const txt = $("inNombre").value.trim().toLowerCase();
+  const nombres = Object.keys(l).sort((a,b) => l[b]-l[a])
+    .filter(n => !txt || (n.toLowerCase().includes(txt) && n.toLowerCase() !== txt)).slice(0, 8);
+  $("sugs").innerHTML = nombres.map(n => `<button type="button" class="chip" data-n="${esc(n)}">${esc(n)}</button>`).join("");
+}
+
+/* ---------- render ---------- */
+function render(){
+  const f = new Date().toLocaleDateString("es-AR",{weekday:"long",day:"numeric",month:"long"});
+  $("fecha").textContent = f.charAt(0).toUpperCase()+f.slice(1);
+
+  const total = pedidos.length, hechos = pedidos.filter(p => p.hecho).length;
+  const pct = total ? Math.round(hechos/total*100) : 0;
+  $("progTxt").textContent = `${hechos} de ${total} entregados`;
+  $("progPct").textContent = pct+"%";
+  $("progBar").style.width = pct+"%";
+
+  const falta = {extra:0, super:0};
+  pedidos.filter(p => !p.hecho).forEach(p => falta[p.tipo] += p.cant);
+  const bloques = [];
+  if (falta.extra) bloques.push(`<div class="falta extra">Extra por entregar<b>${fmt(falta.extra)}</b></div>`);
+  if (falta.super) bloques.push(`<div class="falta super">Súper por entregar<b>${fmt(falta.super)}</b></div>`);
+  $("faltan").innerHTML = bloques.join("") || (total ? `<div class="falta extra" style="flex-basis:100%">✅ Todo entregado</div>` : "");
+
+  const orden = [...pedidos].sort((a,b) => (a.hecho - b.hecho) || (a.t - b.t));
+  $("lista").innerHTML = orden.length ? orden.map(p => `
+    <li class="item ${p.hecho?"hecho":""}" data-id="${p.id}">
+      <button class="editar" data-act="editar" aria-label="Editar">✎</button>
+      <div class="info">
+        <div class="nombre">${esc(p.nombre)}</div>
+        <div class="cant"><b>${fmt(p.cant)}</b> ${unidad(p.cant)}</div>
+      </div>
+      <span class="tipo ${p.tipo}">${p.tipo === "extra" ? "EXTRA" : "SÚPER"}</span>
+      <button class="check" data-act="toggle" aria-label="Marcar entregado">✓</button>
+    </li>`).join("")
+    : `<li class="vacio">Todavía no hay pedidos hoy.<br>Tocá <b>+ Pedido</b> para cargar el primero.</li>`;
+
+  $("btnReiniciar").hidden = total === 0;
+}
+
+/* ---------- lista ---------- */
+$("lista").addEventListener("click", e => {
+  const btn = e.target.closest("button[data-act]"); if (!btn) return;
+  const p = pedidos.find(x => x.id === btn.closest(".item").dataset.id); if (!p) return;
+  if (btn.dataset.act === "toggle"){
+    if (navigator.vibrate) navigator.vibrate(p.hecho ? 10 : 25);
+    upsert({...p, hecho: !p.hecho});
+  } else abrir(p);
+});
+$("btnReiniciar").addEventListener("click", () => {
+  if (confirm("¿Reiniciar el día? Se borran TODOS los pedidos de la lista.")) reiniciar();
+});
+
+/* ---------- formulario ---------- */
+const dlg = $("dlg");
+function pintarTipo(){ document.querySelectorAll(".tbtn").forEach(b => b.classList.toggle("sel", b.dataset.t === tipoSel)); }
+function pintarRapidos(){
+  const v = parseCant($("inCant").value);
+  $("rapidos").innerHTML = RAPIDOS.map(n => `<button type="button" class="chip ${v===n?"sel":""}" data-c="${n}">${fmt(n)}</button>`).join("");
+}
+function abrir(p){
+  editId = p ? p.id : null;
+  $("dlgTitulo").textContent = p ? "Editar pedido" : "Nuevo pedido";
+  $("btnGuardar").textContent = p ? "Guardar" : "Agregar";
+  $("btnEliminar").hidden = !p;
+  $("inNombre").value = p ? p.nombre : "";
+  $("inCant").value = p ? String(p.cant).replace(".", ",") : "1";
+  tipoSel = p ? p.tipo : tipoSel;
+  pintarTipo(); pintarRapidos(); pintarSugs();
+  dlg.showModal();
+  if (!p) setTimeout(() => $("inNombre").focus(), 60);
+}
+$("fab").addEventListener("click", () => abrir(null));
+$("btnCancelar").addEventListener("click", () => dlg.close());
+dlg.addEventListener("click", e => { if (e.target === dlg) dlg.close(); });
+
+$("inNombre").addEventListener("input", pintarSugs);
+$("sugs").addEventListener("click", e => { const c = e.target.closest(".chip"); if (c){ $("inNombre").value = c.dataset.n; pintarSugs(); } });
+$("rapidos").addEventListener("click", e => { const c = e.target.closest(".chip"); if (c){ $("inCant").value = String(c.dataset.c).replace(".", ","); pintarRapidos(); } });
+$("inCant").addEventListener("input", pintarRapidos);
+$("menos").addEventListener("click", () => { const v = parseCant($("inCant").value) || 1; $("inCant").value = String(Math.max(0.5, v - 0.5)).replace(".", ","); pintarRapidos(); });
+$("mas").addEventListener("click", () => { const v = parseCant($("inCant").value) || 0; $("inCant").value = String(v + 0.5).replace(".", ","); pintarRapidos(); });
+document.querySelectorAll(".tbtn").forEach(b => b.addEventListener("click", () => { tipoSel = b.dataset.t; pintarTipo(); }));
+
+$("btnEliminar").addEventListener("click", () => {
+  if (!confirm("¿Eliminar este pedido?")) return;
+  dlg.close(); quitar(editId);
+});
+
+function confirmar(){
+  const nombre = $("inNombre").value.trim();
+  const cant = parseCant($("inCant").value);
+  if (!nombre){ $("inNombre").focus(); return; }
+  if (isNaN(cant)){ $("inCant").focus(); $("inCant").select(); return; }
+  const prev = editId ? pedidos.find(x => x.id === editId) : null;
+  upsert({ id: prev ? prev.id : uid(), nombre, cant, tipo: tipoSel, hecho: prev ? prev.hecho : false, t: prev ? prev.t : Date.now() });
+  if (!prev) sumarLugar(nombre);
+  dlg.close();
+}
+$("btnGuardar").addEventListener("click", confirmar);
+dlg.addEventListener("keydown", e => { if (e.key === "Enter" && e.target.tagName === "INPUT"){ e.preventDefault(); confirmar(); } });
+
+
+/* ---------- importar de WhatsApp ---------- */
+const PALABRAS = new Map(Object.entries({un:1,uno:1,una:1,dos:2,tres:3,cuatro:4,cinco:5,seis:6,siete:7,ocho:8,nueve:9,diez:10,once:11,doce:12,medio:.5,media:.5}));
+const UNIDADES = new Set(["cajon","cajón","cajones","caja","cajas"]);
+const TIPOS_P = new Set(["extra","extras","super","súper"]);
+const DIAS = /^(lunes|martes|mi[eé]rcoles|jueves|viernes|s[aá]bado|domingo)\b/i;
+
+function valorToken(t){
+  t = t.replace(/^x(?=\d)/, "");
+  if (PALABRAS.has(t)) return PALABRAS.get(t);
+  if (t === "½") return .5;
+  let m;
+  if ((m = t.match(/^(\d+)½$/))) return +m[1] + .5;
+  if ((m = t.match(/^(\d+)\/(\d+)$/)) && +m[2]) return +m[1] / +m[2];
+  if (/^\d+([.,]\d+)?$/.test(t)) return parseFloat(t.replace(",", "."));
+  return null;
+}
+const mayus = n => n.charAt(0).toLocaleUpperCase("es") + n.slice(1);
+
+function parsearLinea(raw){
+  let s = raw
+    .replace(/^\[[^\]]*\]\s*[^:]{0,40}:\s*/, "")
+    .replace(/^\d{1,2}\/\d{1,2}\/\d{2,4},?\s+\d{1,2}:\d{2}(?:\s?[ap]\.?\s?m\.?)?\s*-\s*[^:]{0,40}:\s*/i, "")
+    .replace(/^[\s\-–—•*·>]+/, "").replace(/[.;!?]+$/, "").trim();
+  if (!s) return null;
+  const toks = s.split(/\s+/), low = toks.map(t => t.toLowerCase());
+  if (DIAS.test(s) && toks.length <= 4) return null;
+  if (/^total\b/i.test(s)) return null;
+
+  let i = toks.length, nNum = 0, canAdd = false, cant = 0, tipo = null, tipoRaw = null;
+  while (i > 0){
+    const t = low[i-1], v = valorToken(t);
+    if (v !== null){
+      if (nNum > 0 && !canAdd) break;
+      cant += v; nNum++; canAdd = v < 1; i--;
+    } else if (t === "y" || t === "con"){ if (nNum > 0) canAdd = true; i--; }
+    else if (UNIDADES.has(t)) i--;
+    else if (TIPOS_P.has(t)){ if (!tipo){ tipo = t.startsWith("e") ? "extra" : "super"; tipoRaw = toks[i-1]; } i--; }
+    else break;
+  }
+  // conectores / unidades sueltos a la izquierda vuelven al nombre
+  while (i < toks.length && (low[i] === "y" || low[i] === "con" || UNIDADES.has(low[i]))) i++;
+
+  let nombre = toks.slice(0, i).join(" ").replace(/[\s\-–—:=,.]+$/, "").trim();
+  if (!nombre && tipoRaw){ nombre = tipoRaw; tipo = null; }
+  if (nNum === 0 && !tipo){ nombre = toks.join(" ").replace(/[\s\-–—:=,.]+$/, ""); }
+  // "medio y medio" = medio de Extra + medio de Súper
+  if (/^(medio|media) y (medio|media)$/.test(low.slice(i).join(" ")) && nombre){
+    return ["extra", "super"].map(t => ({ nombre: mayus(nombre), cantTxt: "0,5", tipo: t, touched: true, dudoso: false }));
+  }
+  return { nombre: mayus(nombre), cantTxt: String(nNum ? cant : 1).replace(".", ","), tipo, touched: !!tipo, dudoso: nNum === 0 };
+}
+
+const dlgWA = $("dlgWA");
+let filasWA = [], tipoDefWA = "extra";
+
+function leerWA(){
+  filasWA = $("taWA").value.split(/\r?\n/).map(parsearLinea).filter(Boolean).flat()
+    .map(r => ({...r, tipo: r.tipo || tipoDefWA}));
+  pintarWA();
+}
+function pintarWA(){
+  document.querySelectorAll(".wbtn").forEach(b => b.classList.toggle("sel", b.dataset.t === tipoDefWA));
+  $("waLista").innerHTML = filasWA.length ? filasWA.map((r, i) => `
+    <div class="wrow ${r.dudoso ? "dud" : ""}" data-i="${i}">
+      <input type="text" class="wn" value="${esc(r.nombre)}" autocomplete="off">
+      <input type="text" class="wc" value="${esc(r.cantTxt)}" inputmode="decimal">
+      <button type="button" class="wt ${r.tipo}" data-a="tipo">${r.tipo === "extra" ? "EXTRA" : "SÚPER"}</button>
+      <button type="button" class="wx" data-a="x" aria-label="Quitar">×</button>
+    </div>`).join("")
+    : ($("taWA").value.trim() ? `<div class="wvacio">No encontré pedidos en ese texto.</div>` : "");
+  $("btnWAok").disabled = !filasWA.length;
+  $("btnWAok").textContent = filasWA.length ? `Agregar ${filasWA.length} ${filasWA.length === 1 ? "pedido" : "pedidos"}` : "Agregar";
+}
+$("btnWA").addEventListener("click", () => { $("taWA").value = ""; filasWA = []; pintarWA(); dlgWA.showModal(); });
+$("btnWACancel").addEventListener("click", () => dlgWA.close());
+dlgWA.addEventListener("click", e => { if (e.target === dlgWA) dlgWA.close(); });
+$("taWA").addEventListener("input", leerWA);
+$("btnPegar").addEventListener("click", async () => {
+  try { const t = await navigator.clipboard.readText(); if (t && t.trim()){ $("taWA").value = t; leerWA(); return; } } catch {}
+  $("taWA").focus();
+});
+document.querySelectorAll(".wbtn").forEach(b => b.addEventListener("click", () => {
+  tipoDefWA = b.dataset.t;
+  filasWA.forEach(r => { if (!r.touched) r.tipo = tipoDefWA; });
+  pintarWA();
+}));
+$("waLista").addEventListener("input", e => {
+  const row = e.target.closest(".wrow"); if (!row) return;
+  const r = filasWA[+row.dataset.i];
+  if (e.target.classList.contains("wn")) r.nombre = e.target.value;
+  if (e.target.classList.contains("wc")) r.cantTxt = e.target.value;
+});
+$("waLista").addEventListener("click", e => {
+  const b = e.target.closest("button[data-a]"); if (!b) return;
+  const i = +b.closest(".wrow").dataset.i;
+  if (b.dataset.a === "x") filasWA.splice(i, 1);
+  else { filasWA[i].tipo = filasWA[i].tipo === "extra" ? "super" : "extra"; filasWA[i].touched = true; }
+  pintarWA();
+});
+$("btnWAok").addEventListener("click", () => {
+  const filas = [...document.querySelectorAll(".wrow")];
+  for (let i = 0; i < filasWA.length; i++){
+    if (!filasWA[i].nombre.trim()){ filas[i].querySelector(".wn").focus(); return; }
+    if (isNaN(parseCant(filasWA[i].cantTxt))){ const c = filas[i].querySelector(".wc"); c.focus(); c.select(); return; }
+  }
+  const base = Date.now();
+  filasWA.forEach((r, i) => {
+    upsert({ id: uid(), nombre: r.nombre.trim(), cant: parseCant(r.cantTxt), tipo: r.tipo, hecho: false, t: base + i });
+    sumarLugar(r.nombre);
+  });
+  dlgWA.close();
+});
+
+/* ---------- arranque ---------- */
+pedidos = cargarLocal();
+render();
+
+/* ---------- Firebase: un documento por pedido (no se pisan entre celulares) ---------- */
+if (FIREBASE_CONFIG.apiKey && FIREBASE_CONFIG.projectId){
+  try {
+    const V = "10.14.1";
+    const { initializeApp } = await import(`https://www.gstatic.com/firebasejs/${V}/firebase-app.js`);
+    const { getFirestore, collection, doc, setDoc, deleteDoc, onSnapshot, writeBatch } =
+      await import(`https://www.gstatic.com/firebasejs/${V}/firebase-firestore.js`);
+    const db = getFirestore(initializeApp(FIREBASE_CONFIG));
+    const col = collection(db, "pedidos");
+
+    remoto = {
+      set: p => setDoc(doc(col, p.id), p).catch(()=>{}),
+      del: id => deleteDoc(doc(col, id)).catch(()=>{}),
+      delMany: ids => { const b = writeBatch(db); ids.forEach(id => b.delete(doc(col, id))); b.commit().catch(()=>{}); }
+    };
+
+    // si había pedidos solo-locales de antes y la nube está vacía, se suben
+    let primera = true;
+    onSnapshot(col, snap => {
+      $("dot").classList.add("on"); $("syncTxt").textContent = "Sincronizado";
+      if (primera && snap.empty && pedidos.length){ pedidos.forEach(p => remoto.set(p)); primera = false; return; }
+      primera = false;
+      pedidos = snap.docs.map(d => d.data());
+      guardarLocal(); render();
+    }, () => { $("dot").classList.remove("on"); $("syncTxt").textContent = "Sin conexión"; });
+  } catch { $("syncTxt").textContent = "Solo este dispositivo"; }
+}
+</script>
+</body>
+</html>
