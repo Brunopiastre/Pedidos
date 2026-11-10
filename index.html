@@ -123,6 +123,10 @@
   .p-form .monto{width:100%;margin:4px 0 0}
   .p-acc{display:flex;gap:8px;width:100%}
   .p-acc button{flex:1;padding:13px;border-radius:12px;border:0;font-size:.95rem;font-weight:700;font-family:inherit}
+  .desp{display:flex;align-items:center;justify-content:space-between;width:100%;margin-top:12px;background:var(--card);
+    border:1px solid var(--line);border-radius:14px;padding:14px 16px;font-size:.98rem;font-weight:700;color:var(--text);font-family:inherit}
+  .desp span:last-child{color:var(--muted);font-size:1rem}
+  #listaEnt{margin-top:8px}
   .vacio{text-align:center;color:var(--muted);padding:44px 10px;line-height:1.5}
   .reiniciar{display:block;margin:22px auto 0;background:none;border:1px solid var(--line);color:var(--muted);
     border-radius:12px;padding:12px 18px;font-size:.88rem;font-weight:600}
@@ -230,6 +234,10 @@
   </section>
 
   <ul class="lista" id="lista"></ul>
+  <div id="entregados" hidden>
+    <button type="button" class="desp" id="btnEntregados"><span id="entTxt">Entregados</span><span id="entFlecha">▸</span></button>
+    <ul class="lista" id="listaEnt" hidden></ul>
+  </div>
   <div class="hint" id="hint" hidden>Mantené apretado un pedido para ordenarlo. Tocá la cantidad para editarlo.</div>
   <section class="caja">
     <h3>Cierre del día</h3>
@@ -345,7 +353,7 @@ let pedidos = [];   // {id, nombre, cant, tipo:'extra'|'super', hecho, t}
 let editId = null;
 let tipoSel = "extra";
 let remoto = null;
-let arrastrando = false, renderPend = false;
+let arrastrando = false, renderPend = false, entAbierto = false;
 const LS_RES = "pedidos_resumen_v1";
 let resumen = { plata: 0, nafta: 0 };
 const LS_PRECIOS = "pedidos_precios_v1";
@@ -463,7 +471,7 @@ function render(){
   if (falta.super) bloques.push(`<div class="falta super">Súper por entregar<b>${fmt(falta.super)}</b></div>`);
   $("faltan").innerHTML = bloques.join("") || (total ? `<div class="falta extra" style="flex-basis:100%">✅ Todo entregado</div>` : "");
 
-  $("lista").innerHTML = grupos.length ? grupos.map(g => {
+  const liGrupo = g => {
     const dirG = (g.items.find(p => p.dir) || {}).dir || "";
     const primero = g.items[0];
     return `
@@ -481,8 +489,17 @@ function render(){
           : `<button type="button" class="mapa sin" data-act="ubicar" data-id="${primero.id}">＋ Ubicación</button>`}</div>
       </div>
       <button class="check" data-act="toggle" aria-label="Marcar entregado">✓</button>
-    </li>`; }).join("")
-    : `<li class="vacio">Todavía no hay pedidos hoy.<br>Tocá <b>+ Pedido</b> para cargar el primero.</li>`;
+    </li>`;
+  };
+  const pend = grupos.filter(g => !g.hecho), hechosG = grupos.filter(g => g.hecho);
+  $("lista").innerHTML = pend.length ? pend.map(liGrupo).join("")
+    : (hechosG.length ? `<li class="vacio">¡Todo entregado!</li>`
+       : `<li class="vacio">Todavía no hay pedidos hoy.<br>Tocá <b>+ Pedido</b> para cargar el primero.</li>`);
+  $("entregados").hidden = !hechosG.length;
+  $("entTxt").textContent = `Entregados (${hechosG.length})`;
+  $("entFlecha").textContent = entAbierto ? "▾" : "▸";
+  $("listaEnt").hidden = !entAbierto;
+  $("listaEnt").innerHTML = hechosG.map(liGrupo).join("");
 
   const sum = arr => arr.reduce((a, p) => a + p.cant, 0);
   const tot = sum(pedidos), ext = sum(pedidos.filter(p => p.tipo === "extra")), sup = sum(pedidos.filter(p => p.tipo === "super"));
@@ -623,7 +640,7 @@ $("inT2").addEventListener("change", () => {
 setInterval(renderTurno, 30000);
 
 /* ---------- lista ---------- */
-$("lista").addEventListener("click", e => {
+const clickLista = e => {
   const a = e.target.closest("a.mapa");
   if (a){ if (Date.now() - (window.__ignorarClick || 0) < 500) e.preventDefault(); return; }
   const btn = e.target.closest("button[data-act]");
@@ -645,7 +662,10 @@ $("lista").addEventListener("click", e => {
   }
   const p = pedidos.find(x => x.id === btn.dataset.id); if (!p) return;
   if (btn.dataset.act === "ubicar") abrir(p, "dir"); else abrir(p);
-});
+};
+$("lista").addEventListener("click", clickLista);
+$("listaEnt").addEventListener("click", clickLista);
+$("btnEntregados").addEventListener("click", () => { entAbierto = !entAbierto; render(); });
 $("btnReiniciar").addEventListener("click", () => {
   if (confirm("¿Reiniciar el día? Se borran TODOS los pedidos y también la plata, la nafta, el turno y los checks.")) reiniciar();
 });
