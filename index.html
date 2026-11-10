@@ -246,8 +246,6 @@
   <section class="caja total">
     <div class="fc"><span>Huevos totales<br><small style="color:var(--muted);font-weight:500">se calcula solo</small></span>
       <div class="auto"><b id="totCajones">0 cajones</b><small id="totDesglose"></small></div></div>
-    <div class="fc" id="filaCobrar" hidden><span>A cobrar<br><small style="color:var(--muted);font-weight:500">según los precios</small></span>
-      <div class="auto"><b id="totCobrar">$ 0</b></div></div>
   </section>
 
   <button class="reiniciar" id="btnReiniciar" hidden>Reiniciar día</button>
@@ -490,9 +488,6 @@ function render(){
   const tot = sum(pedidos), ext = sum(pedidos.filter(p => p.tipo === "extra")), sup = sum(pedidos.filter(p => p.tipo === "super"));
   $("totCajones").textContent = `${fmt(tot)} ${unidad(tot)}`;
   $("totDesglose").textContent = tot ? `Extra ${fmt(ext)} · Súper ${fmt(sup)}` : "";
-  const aCobrar = ext * precios.extra + sup * precios.super;
-  $("filaCobrar").hidden = !(aCobrar > 0);
-  $("totCobrar").textContent = "$ " + fmtMonto(aCobrar);
   renderResumen(); renderTurno(); renderCierre(); renderPrecios();
   $("btnReiniciar").hidden = total === 0 && !resumen.plata && !resumen.nafta;
   $("hint").hidden = pedidos.filter(p => !p.hecho).length < 2;
