@@ -43,7 +43,14 @@
   .hint{text-align:center;color:var(--muted);font-size:.78rem;margin-top:12px}
   .editar{background:none;border:0;color:#b5afa5;font-size:1.05rem;padding:10px 8px;border-radius:8px}
   .info{flex:1;min-width:0}
-  .nombre{font-weight:700;font-size:1.08rem;overflow-wrap:anywhere}
+  .nombre{display:block;font-weight:700;font-size:1.08rem;overflow-wrap:anywhere;color:inherit;text-decoration:none;padding:2px 0;
+    -webkit-user-drag:none}
+  .pin{font-size:.78rem;margin-left:6px;opacity:.65}
+  .dir{color:var(--muted);font-size:.82rem;margin-top:1px;overflow-wrap:anywhere}
+  .nota{display:inline-block;margin-top:6px;background:#fef3c7;color:#92400e;border-radius:8px;padding:4px 9px;font-size:.86rem;font-weight:600;overflow-wrap:anywhere}
+  .item.hecho .dir{color:rgba(255,255,255,.85)}
+  .item.hecho .nota{background:rgba(255,255,255,.22);color:#fff}
+  .mas-campos{margin-top:14px;background:none;border:1.5px dashed var(--line);color:var(--muted);border-radius:12px;padding:11px;width:100%;font-size:.92rem;font-weight:600}
   .cant{color:var(--muted);font-size:.92rem;margin-top:2px}
   .cant b{color:var(--text);font-size:1.02rem}
   .tipo{flex:none;font-size:.8rem;font-weight:700;border-radius:99px;padding:6px 12px;letter-spacing:.02em}
@@ -187,6 +194,14 @@
     <button type="button" class="tbtn super" data-t="super">Súper</button>
   </div>
 
+  <button type="button" class="mas-campos" id="btnMas">＋ Dirección y nota</button>
+  <div id="extraCampos" hidden>
+    <label for="inDir">Dirección (para Google Maps)</label>
+    <input type="text" id="inDir" placeholder="Calle y número, o barrio" autocomplete="off">
+    <label for="inNota">Nota</label>
+    <input type="text" id="inNota" placeholder="Ej: se le cobra $5.000" autocomplete="off">
+  </div>
+
   <div class="acciones">
     <button class="eliminar" id="btnEliminar" type="button" hidden>Eliminar</button>
     <button class="cancelar" id="btnCancelar" type="button">Cancelar</button>
@@ -234,6 +249,8 @@ const FIREBASE_CONFIG = {
 const RAPIDOS = [0.5, 1, 1.5, 2, 2.5, 3, 3.5, 4, 4.5];
 const LS_KEY = "pedidos_v2";
 const LS_LUGARES = "pedidos_lugares_v2";
+const LS_DIRS = "pedidos_dirs_v1";
+const CIUDAD = "Mendoza, Argentina";   // se agrega a la búsqueda de Google Maps
 
 const $ = id => document.getElementById(id);
 const uid = () => Date.now().toString(36)+Math.random().toString(36).slice(2,6);
@@ -280,6 +297,18 @@ function reiniciar(){
   if (remoto) remoto.delMany(ids);
 }
 
+/* ---------- direcciones recordadas por lugar + Google Maps ---------- */
+function dirs(){ try { return JSON.parse(localStorage.getItem(LS_DIRS)) || {}; } catch { return {}; } }
+function recordarDir(nombre, dir){
+  const d = dirs(); d[nombre.trim().toLowerCase()] = dir;
+  try { localStorage.setItem(LS_DIRS, JSON.stringify(d)); } catch {}
+}
+const dirDe = nombre => dirs()[nombre.trim().toLowerCase()] || "";
+function mapsUrl(p){
+  const base = p.dir ? (/mendoza/i.test(p.dir) ? p.dir : `${p.dir}, ${CIUDAD}`) : `${p.nombre}, ${CIUDAD}`;
+  return "https://www.google.com/maps/search/?api=1&query=" + encodeURIComponent(base);
+}
+
 /* ---------- lugares usados (sugerencias) ---------- */
 function lugares(){ try { return JSON.parse(localStorage.getItem(LS_LUGARES)) || {}; } catch { return {}; } }
 function sumarLugar(n){
@@ -319,8 +348,10 @@ function render(){
     <li class="item ${p.hecho?"hecho":""}" data-id="${p.id}">
       <button class="editar" data-act="editar" aria-label="Editar">✎</button>
       <div class="info">
-        <div class="nombre">${esc(p.nombre)}</div>
+        <a class="nombre" href="${mapsUrl(p)}" target="_blank" rel="noopener" draggable="false">${esc(p.nombre)}<span class="pin">📍</span></a>
+        ${p.dir ? `<div class="dir">${esc(p.dir)}</div>` : ""}
         <div class="cant"><b>${fmt(p.cant)}</b> ${unidad(p.cant)}</div>
+        ${p.nota ? `<div class="nota">📝 ${esc(p.nota)}</div>` : ""}
       </div>
       <span class="tipo ${p.tipo}">${p.tipo === "extra" ? "EXTRA" : "SÚPER"}</span>
       <button class="check" data-act="toggle" aria-label="Marcar entregado">✓</button>
@@ -366,6 +397,8 @@ function cambioRes(){
 
 /* ---------- lista ---------- */
 $("lista").addEventListener("click", e => {
+  const a = e.target.closest("a.nombre");
+  if (a){ if (Date.now() - (window.__ignorarClick || 0) < 500) e.preventDefault(); return; }
   const btn = e.target.closest("button[data-act]"); if (!btn) return;
   const p = pedidos.find(x => x.id === btn.closest(".item").dataset.id); if (!p) return;
   if (btn.dataset.act === "toggle"){
@@ -495,6 +528,10 @@ function abrir(p){
   $("btnEliminar").hidden = !p;
   $("inNombre").value = p ? p.nombre : "";
   $("inCant").value = p ? String(p.cant).replace(".", ",") : "1";
+  $("inDir").value = p && p.dir ? p.dir : "";
+  $("inNota").value = p && p.nota ? p.nota : "";
+  $("extraCampos").hidden = !(p && (p.dir || p.nota));
+  $("btnMas").hidden = !$("extraCampos").hidden;
   tipoSel = p ? p.tipo : tipoSel;
   pintarTipo(); pintarRapidos(); pintarSugs();
   dlg.showModal();
@@ -504,8 +541,14 @@ $("fab").addEventListener("click", () => abrir(null));
 $("btnCancelar").addEventListener("click", () => dlg.close());
 dlg.addEventListener("click", e => { if (e.target === dlg) dlg.close(); });
 
-$("inNombre").addEventListener("input", pintarSugs);
-$("sugs").addEventListener("click", e => { const c = e.target.closest(".chip"); if (c){ $("inNombre").value = c.dataset.n; pintarSugs(); } });
+function mostrarExtra(){ $("extraCampos").hidden = false; $("btnMas").hidden = true; }
+function autoDir(){
+  const d = dirDe($("inNombre").value);
+  if (d && !$("inDir").value){ $("inDir").value = d; mostrarExtra(); }
+}
+$("btnMas").addEventListener("click", () => { mostrarExtra(); setTimeout(() => $("inDir").focus(), 30); });
+$("inNombre").addEventListener("input", () => { pintarSugs(); autoDir(); });
+$("sugs").addEventListener("click", e => { const c = e.target.closest(".chip"); if (c){ $("inNombre").value = c.dataset.n; pintarSugs(); autoDir(); } });
 $("rapidos").addEventListener("click", e => { const c = e.target.closest(".chip"); if (c){ $("inCant").value = String(c.dataset.c).replace(".", ","); pintarRapidos(); } });
 $("inCant").addEventListener("input", pintarRapidos);
 $("menos").addEventListener("click", () => { const v = parseCant($("inCant").value) || 1; $("inCant").value = String(Math.max(0.5, v - 0.5)).replace(".", ","); pintarRapidos(); });
@@ -523,7 +566,12 @@ function confirmar(){
   if (!nombre){ $("inNombre").focus(); return; }
   if (isNaN(cant)){ $("inCant").focus(); $("inCant").select(); return; }
   const prev = editId ? pedidos.find(x => x.id === editId) : null;
-  upsert({ id: prev ? prev.id : uid(), nombre, cant, tipo: tipoSel, hecho: prev ? prev.hecho : false, t: prev ? prev.t : Date.now() });
+  const dir = $("inDir").value.trim().slice(0, 150), nota = $("inNota").value.trim().slice(0, 200);
+  const obj = { id: prev ? prev.id : uid(), nombre, cant, tipo: tipoSel, hecho: prev ? prev.hecho : false, t: prev ? prev.t : Date.now() };
+  if (dir) obj.dir = dir;      // los campos vacíos no se guardan
+  if (nota) obj.nota = nota;
+  upsert(obj);
+  if (dir) recordarDir(nombre, dir);
   if (!prev) sumarLugar(nombre);
   dlg.close();
 }
@@ -638,7 +686,9 @@ $("btnWAok").addEventListener("click", () => {
   }
   const base = Date.now();
   filasWA.forEach((r, i) => {
-    upsert({ id: uid(), nombre: r.nombre.trim(), cant: parseCant(r.cantTxt), tipo: r.tipo, hecho: false, t: base + i });
+    const o = { id: uid(), nombre: r.nombre.trim(), cant: parseCant(r.cantTxt), tipo: r.tipo, hecho: false, t: base + i };
+    const dd = dirDe(o.nombre); if (dd) o.dir = dd;
+    upsert(o);
     sumarLugar(r.nombre);
   });
   dlgWA.close();
