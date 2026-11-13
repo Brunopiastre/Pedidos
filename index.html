@@ -184,9 +184,35 @@
   .cancelar{background:#ece8df;color:var(--text)}
   .eliminar{background:#fee2e2;color:var(--danger)}
   .guardar{background:var(--accent);color:#fff;flex:2!important}
+
+  .lock{position:fixed;inset:0;z-index:100;background:var(--bg);display:flex;align-items:center;justify-content:center;padding:24px}
+  .lock-card{width:100%;max-width:340px;text-align:center}
+  .lock-card .ico{font-size:3rem}
+  .lock-card h2{margin:6px 0 18px}
+  .lock-card input{width:100%;padding:16px;border-radius:14px;border:1.5px solid var(--line);font-size:1.1rem;text-align:center;background:#fff}
+  .lock-card button{width:100%;margin-top:12px;padding:16px;border-radius:14px;border:0;background:var(--accent);color:#fff;font-size:1.05rem;font-weight:700}
+  .lock-err{color:var(--danger);font-size:.92rem;min-height:1.3em;margin-top:10px}
+  .fj-item{display:flex;align-items:center;gap:10px;padding:12px 0;border-bottom:1px solid var(--line)}
+  .fj-item .fj-t{flex:1;min-width:0}
+  .fj-item b{display:block}
+  .fj-item small{color:var(--muted)}
+  .fj-item .x{border:0;background:#fee2e2;color:var(--danger);border-radius:10px;width:40px;height:40px;font-size:1.1rem}
+  .dias{display:flex;gap:6px;flex-wrap:wrap}
+  .dias .chip{padding:9px 12px}
+  .fj-add{margin-top:16px;padding-top:6px;border-top:2px solid var(--line)}
+  .fj-add input[type=text]{width:100%}
+  .btn-fijos{margin-top:10px}
 </style>
 </head>
 <body>
+<div class="lock" id="lock"><div class="lock-card" id="lockCard" hidden>
+  <div class="ico">🥚</div><h2>Pedidos del día</h2>
+  <form id="lockForm">
+    <input type="password" id="lockPass" placeholder="Contraseña" autocomplete="current-password" required>
+    <div class="lock-err" id="lockErr"></div>
+    <button type="submit" id="lockBtn">Entrar</button>
+  </form>
+</div></div>
 <div class="app">
   <header>
     <div>
@@ -257,6 +283,7 @@
   </section>
 
   <button class="reiniciar" id="btnReiniciar" hidden>Reiniciar día</button>
+  <button class="reiniciar btn-fijos" id="btnFijos">Pedidos fijos</button>
 </div>
 
 <div class="fabs">
@@ -319,6 +346,31 @@
   <div class="acciones">
     <button class="cancelar" id="btnWACancel" type="button">Cancelar</button>
     <button class="guardar" id="btnWAok" type="button" disabled>Agregar</button>
+  </div>
+</dialog>
+
+<dialog id="dlgFijos">
+  <h2>Pedidos fijos</h2>
+  <div class="ayuda">Aparecen solos cada día que elijas.</div>
+  <div id="fjLista"></div>
+  <div class="fj-add">
+    <label for="fjNombre">Nuevo fijo · Lugar</label>
+    <input type="text" id="fjNombre" autocomplete="off" autocapitalize="words">
+    <label for="fjCant">Cajones</label>
+    <input type="text" id="fjCant" inputmode="decimal" value="1" style="width:100%">
+    <label>Tipo</label>
+    <div class="tipos">
+      <button type="button" class="tbtn extra sel" data-t="extra">Extra</button>
+      <button type="button" class="tbtn super" data-t="super">Súper</button>
+    </div>
+    <label>Días</label>
+    <div class="dias" id="fjDias"></div>
+    <label for="fjNota">Nota</label>
+    <input type="text" id="fjNota" placeholder="Opcional" autocomplete="off">
+    <button type="button" class="chip" id="fjAgregar" style="margin-top:14px;width:100%;padding:14px">＋ Agregar fijo</button>
+  </div>
+  <div class="acciones">
+    <button class="cancelar" id="fjCerrar" type="button">Cerrar</button>
   </div>
 </dialog>
 
@@ -402,6 +454,7 @@ function reiniciar(){
   pedidos = []; resumen = { plata: 0, nafta: 0 }; turno = { inicio: 0, fin: 0 }; cierre = { plata: false, nafta: false, remitos: false };
   guardarLocal(); guardarRes(); guardarTurno(); guardarCierre(); render();
   if (remoto) remoto.delMany(ids);
+  if (typeof marcarGen === 'function') marcarGen();
 }
 
 /* ---------- direcciones recordadas por lugar + Google Maps ---------- */
@@ -961,71 +1014,206 @@ $("btnWAok").addEventListener("click", () => {
 pedidos = cargarLocal();
 render();
 
-/* ---------- Firebase: un documento por pedido (no se pisan entre celulares) ---------- */
+
+/* ---------- pedidos fijos por día de la semana ---------- */
+const LS_FIJOS = "pedidos_fijos_v1", LS_GEN = "pedidos_gen_v1";
+const FIJOS_INICIAL = [
+  { id:"carrillo", nombre:"Pastas artesanales Carrillo", cant:4,  tipo:"super", dias:[5] },
+  { id:"cristian", nombre:"Cristian",                    cant:4,  tipo:"super", dias:[5] },
+  { id:"nam",      nombre:"Ñam",                         cant:10, tipo:"extra", dias:[2,5], nota:"atados" },
+  { id:"club",     nombre:"Club de Café",                cant:1,  tipo:"super", dias:[4] }
+];
+const NOMBRES_DIA = { 1:"Lun", 2:"Mar", 3:"Mié", 4:"Jue", 5:"Vie", 6:"Sáb", 0:"Dom" };
+const ORDEN_DIAS = [1,2,3,4,5,6,0];
+let fijos = (() => { try { const v = JSON.parse(localStorage.getItem(LS_FIJOS)); if (Array.isArray(v)) return v; } catch {} return FIJOS_INICIAL.map(f => ({...f})); })();
+let gen = localStorage.getItem(LS_GEN) || "";
+let fjTipo = "extra", fjDiasSel = [];
+const hoyStr = () => { const d = new Date(); return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0"); };
+
+function guardarFijos(){
+  try { localStorage.setItem(LS_FIJOS, JSON.stringify(fijos)); } catch {}
+  if (remoto && remoto.setFijos) remoto.setFijos(fijos);
+}
+function marcarGen(){
+  gen = hoyStr();
+  try { localStorage.setItem(LS_GEN, gen); } catch {}
+  if (remoto && remoto.setGen) remoto.setGen(gen);
+}
+function generarFijos(){
+  const hoy = hoyStr();
+  if (gen === hoy) return;
+  const dow = new Date().getDay(), t0 = Date.now();
+  const nuevos = fijos.filter(f => f.dias.includes(dow)).map((f, i) => {
+    const o = { id:"fijo-"+f.id+"-"+hoy, nombre:f.nombre, cant:f.cant, tipo:f.tipo, hecho:false, t:t0+i };
+    if (f.nota) o.nota = f.nota;
+    const d = dirDe(f.nombre); if (d) o.dir = d;
+    return o;
+  }).filter(o => !pedidos.some(p => p.id === o.id));
+  marcarGen();
+  if (nuevos.length) upsertMany(nuevos);
+}
+document.addEventListener("visibilitychange", () => { if (!document.hidden && listoFijos()) generarFijos(); });
+let listoFijos = () => true;
+
+function renderFijos(){
+  $("fjLista").innerHTML = fijos.length ? fijos.map(f =>
+    `<div class="fj-item"><div class="fj-t"><b>${esc(f.nombre)}</b><small>${fmt(f.cant)} ${unidad(f.cant)} ${f.tipo==="super"?"Súper":"Extra"} · ${ORDEN_DIAS.filter(d=>f.dias.includes(d)).map(d=>NOMBRES_DIA[d]).join(", ")}${f.nota?" · "+esc(f.nota):""}</small></div><button class="x" data-id="${esc(f.id)}" aria-label="Quitar">✕</button></div>`
+  ).join("") : '<div class="ayuda" style="margin:12px 0">No hay pedidos fijos.</div>';
+}
+function pintarDias(){
+  $("fjDias").innerHTML = ORDEN_DIAS.map(d => `<button type="button" class="chip${fjDiasSel.includes(d)?" sel":""}" data-d="${d}">${NOMBRES_DIA[d]}</button>`).join("");
+}
+$("btnFijos").addEventListener("click", () => {
+  fjDiasSel = []; fjTipo = "extra"; $("fjNombre").value = ""; $("fjCant").value = "1"; $("fjNota").value = "";
+  document.querySelectorAll("#dlgFijos .tbtn").forEach(b => b.classList.toggle("sel", b.dataset.t === "extra"));
+  renderFijos(); pintarDias(); $("dlgFijos").showModal();
+});
+$("fjCerrar").addEventListener("click", () => $("dlgFijos").close());
+$("fjDias").addEventListener("click", e => {
+  const b = e.target.closest("[data-d]"); if (!b) return;
+  const d = +b.dataset.d; fjDiasSel = fjDiasSel.includes(d) ? fjDiasSel.filter(x => x !== d) : [...fjDiasSel, d]; pintarDias();
+});
+document.querySelectorAll("#dlgFijos .tbtn").forEach(b => b.addEventListener("click", () => {
+  fjTipo = b.dataset.t; document.querySelectorAll("#dlgFijos .tbtn").forEach(x => x.classList.toggle("sel", x === b));
+}));
+$("fjLista").addEventListener("click", e => {
+  const b = e.target.closest(".x"); if (!b) return;
+  const f = fijos.find(x => x.id === b.dataset.id);
+  if (!f || !confirm("¿Quitar el fijo «" + f.nombre + "»? Los pedidos de hoy no se tocan.")) return;
+  fijos = fijos.filter(x => x.id !== f.id); guardarFijos(); renderFijos();
+});
+$("fjAgregar").addEventListener("click", () => {
+  const nombre = $("fjNombre").value.trim().slice(0, 80), cant = parseCant($("fjCant").value);
+  if (!nombre){ $("fjNombre").focus(); return; }
+  if (isNaN(cant) || cant <= 0){ $("fjCant").focus(); return; }
+  if (!fjDiasSel.length) return;
+  const f = { id: uid(), nombre, cant, tipo: fjTipo, dias: [...fjDiasSel].sort() };
+  const nota = $("fjNota").value.trim().slice(0, 200); if (nota) f.nota = nota;
+  fijos.push(f); guardarFijos(); renderFijos();
+  fjDiasSel = []; $("fjNombre").value = ""; $("fjCant").value = "1"; $("fjNota").value = ""; pintarDias();
+  if (f.dias.includes(new Date().getDay())){ gen = ""; generarFijos(); }
+});
+
+/* ---------- Firebase: un documento por pedido + contraseña (se guarda en el dispositivo) ---------- */
+const AUTH_EMAIL = "pedidos@huevos.app";
 if (FIREBASE_CONFIG.apiKey && FIREBASE_CONFIG.projectId){
   try {
     const V = "10.14.1";
     const { initializeApp } = await import(`https://www.gstatic.com/firebasejs/${V}/firebase-app.js`);
     const { getFirestore, collection, doc, setDoc, deleteDoc, onSnapshot, writeBatch } =
       await import(`https://www.gstatic.com/firebasejs/${V}/firebase-firestore.js`);
-    const db = getFirestore(initializeApp(FIREBASE_CONFIG));
+    const { getAuth, onAuthStateChanged, signInWithEmailAndPassword } =
+      await import(`https://www.gstatic.com/firebasejs/${V}/firebase-auth.js`);
+    const app = initializeApp(FIREBASE_CONFIG);
+    const db = getFirestore(app);
+    const auth = getAuth(app);
     const col = collection(db, "pedidos");
+    let iniciado = false;
 
-    remoto = {
-      set: p => setDoc(doc(col, p.id), p).catch(()=>{}),
-      setMany: arr => { const b = writeBatch(db); arr.forEach(p => b.set(doc(col, p.id), p)); b.commit().catch(()=>{}); },
-      del: id => deleteDoc(doc(col, id)).catch(()=>{}),
-      setRes: r => setDoc(doc(db, "resumen", "hoy"), { plata: r.plata, nafta: r.nafta }).catch(()=>{}),
-      setTurno: t => setDoc(doc(db, "resumen", "turno"), { inicio: t.inicio, fin: t.fin }).catch(()=>{}),
-      setCierre: c => setDoc(doc(db, "resumen", "cierre"), { plata: !!c.plata, nafta: !!c.nafta, remitos: !!c.remitos }).catch(()=>{}),
-      setPrecios: p => setDoc(doc(db, "resumen", "precios"), { extra: p.extra, super: p.super }).catch(()=>{}),
-      delMany: ids => { const b = writeBatch(db); ids.forEach(id => b.delete(doc(col, id))); b.commit().catch(()=>{}); }
-    };
+    function iniciar(){
+      let okPed = false, okFijos = false, okGen = false;
+      listoFijos = () => okPed && okFijos && okGen;
+      const tryGen = () => { if (listoFijos()) generarFijos(); };
 
-    onSnapshot(doc(db, "resumen", "hoy"), snap => {
-      if (!snap.exists()) return;
-      const v = snap.data();
-      resumen = { plata: +v.plata || 0, nafta: +v.nafta || 0 };
-      try { localStorage.setItem(LS_RES, JSON.stringify(resumen)); } catch {}
-      renderResumen();
-      $("btnReiniciar").hidden = !pedidos.length && !resumen.plata && !resumen.nafta;
-    }, () => {});
+      remoto = {
+        set: p => setDoc(doc(col, p.id), p).catch(()=>{}),
+        setMany: arr => { const b = writeBatch(db); arr.forEach(p => b.set(doc(col, p.id), p)); b.commit().catch(()=>{}); },
+        del: id => deleteDoc(doc(col, id)).catch(()=>{}),
+        setRes: r => setDoc(doc(db, "resumen", "hoy"), { plata: r.plata, nafta: r.nafta }).catch(()=>{}),
+        setTurno: t => setDoc(doc(db, "resumen", "turno"), { inicio: t.inicio, fin: t.fin }).catch(()=>{}),
+        setCierre: c => setDoc(doc(db, "resumen", "cierre"), { plata: !!c.plata, nafta: !!c.nafta, remitos: !!c.remitos }).catch(()=>{}),
+        setPrecios: p => setDoc(doc(db, "resumen", "precios"), { extra: p.extra, super: p.super }).catch(()=>{}),
+        setFijos: f => setDoc(doc(db, "resumen", "fijos"), { json: JSON.stringify(f) }).catch(()=>{}),
+        setGen: g => setDoc(doc(db, "resumen", "gen"), { fecha: g }).catch(()=>{}),
+        delMany: ids => { const b = writeBatch(db); ids.forEach(id => b.delete(doc(col, id))); b.commit().catch(()=>{}); }
+      };
 
-    onSnapshot(doc(db, "resumen", "turno"), snap => {
-      if (!snap.exists()) return;
-      const v = snap.data();
-      turno = { inicio: +v.inicio || 0, fin: +v.fin || 0 };
-      try { localStorage.setItem(LS_TURNO, JSON.stringify(turno)); } catch {}
-      renderTurno();
-    }, () => {});
+      onSnapshot(doc(db, "resumen", "hoy"), snap => {
+        if (!snap.exists()) return;
+        const v = snap.data();
+        resumen = { plata: +v.plata || 0, nafta: +v.nafta || 0 };
+        try { localStorage.setItem(LS_RES, JSON.stringify(resumen)); } catch {}
+        renderResumen();
+        $("btnReiniciar").hidden = !pedidos.length && !resumen.plata && !resumen.nafta;
+      }, () => {});
 
-    onSnapshot(doc(db, "resumen", "cierre"), snap => {
-      if (!snap.exists()) return;
-      const v = snap.data();
-      cierre = { plata: !!v.plata, nafta: !!v.nafta, remitos: !!v.remitos };
-      try { localStorage.setItem(LS_CIERRE, JSON.stringify(cierre)); } catch {}
-      renderCierre();
-    }, () => {});
+      onSnapshot(doc(db, "resumen", "turno"), snap => {
+        if (!snap.exists()) return;
+        const v = snap.data();
+        turno = { inicio: +v.inicio || 0, fin: +v.fin || 0 };
+        try { localStorage.setItem(LS_TURNO, JSON.stringify(turno)); } catch {}
+        renderTurno();
+      }, () => {});
 
-    onSnapshot(doc(db, "resumen", "precios"), snap => {
-      if (!snap.exists()) return;
-      const v = snap.data();
-      precios = { extra: +v.extra || 0, super: +v.super || 0 };
-      try { localStorage.setItem(LS_PRECIOS, JSON.stringify(precios)); } catch {}
-      renderPrecios(); render();
-    }, () => {});
+      onSnapshot(doc(db, "resumen", "cierre"), snap => {
+        if (!snap.exists()) return;
+        const v = snap.data();
+        cierre = { plata: !!v.plata, nafta: !!v.nafta, remitos: !!v.remitos };
+        try { localStorage.setItem(LS_CIERRE, JSON.stringify(cierre)); } catch {}
+        renderCierre();
+      }, () => {});
 
-    // si había pedidos solo-locales de antes y la nube está vacía, se suben
-    let primera = true;
-    onSnapshot(col, snap => {
-      $("dot").classList.add("on"); $("syncTxt").textContent = "Sincronizado";
-      if (primera && snap.empty && pedidos.length){ pedidos.forEach(p => remoto.set(p)); primera = false; return; }
-      primera = false;
-      pedidos = snap.docs.map(d => d.data());
-      guardarLocal(); render();
-    }, () => { $("dot").classList.remove("on"); $("syncTxt").textContent = "Sin conexión"; });
-  } catch { $("syncTxt").textContent = "Solo este dispositivo"; }
-}
+      onSnapshot(doc(db, "resumen", "precios"), snap => {
+        if (!snap.exists()) return;
+        const v = snap.data();
+        precios = { extra: +v.extra || 0, super: +v.super || 0 };
+        try { localStorage.setItem(LS_PRECIOS, JSON.stringify(precios)); } catch {}
+        renderPrecios(); render();
+      }, () => {});
+
+      onSnapshot(doc(db, "resumen", "fijos"), snap => {
+        if (snap.exists()){
+          try { const a = JSON.parse(snap.data().json); if (Array.isArray(a)){ fijos = a; localStorage.setItem(LS_FIJOS, JSON.stringify(fijos)); } } catch {}
+          if ($("dlgFijos").open) renderFijos();
+        } else remoto.setFijos(fijos);
+        okFijos = true; tryGen();
+      }, () => { okFijos = true; tryGen(); });
+
+      onSnapshot(doc(db, "resumen", "gen"), snap => {
+        if (snap.exists() && snap.data().fecha){ gen = snap.data().fecha; try { localStorage.setItem(LS_GEN, gen); } catch {} }
+        okGen = true; tryGen();
+      }, () => { okGen = true; tryGen(); });
+
+      // si había pedidos solo-locales de antes y la nube está vacía, se suben
+      let primera = true;
+      onSnapshot(col, snap => {
+        $("dot").classList.add("on"); $("syncTxt").textContent = "Sincronizado";
+        if (primera && snap.empty && pedidos.length){ pedidos.forEach(p => remoto.set(p)); primera = false; okPed = true; tryGen(); return; }
+        primera = false;
+        pedidos = snap.docs.map(d => d.data());
+        guardarLocal(); render();
+        okPed = true; tryGen();
+      }, () => { $("dot").classList.remove("on"); $("syncTxt").textContent = "Sin conexión"; okPed = true; tryGen(); });
+    }
+
+    /* contraseña: se pide una sola vez; Firebase guarda la sesión en el dispositivo */
+    const lock = $("lock");
+    onAuthStateChanged(auth, user => {
+      if (user){
+        lock.hidden = true;
+        if (!iniciado){ iniciado = true; iniciar(); }
+      } else {
+        $("lockCard").hidden = false; lock.hidden = false;
+        setTimeout(() => $("lockPass").focus(), 50);
+      }
+    });
+    $("lockForm").addEventListener("submit", async e => {
+      e.preventDefault();
+      const btn = $("lockBtn"); btn.disabled = true; $("lockErr").textContent = "";
+      try { await signInWithEmailAndPassword(auth, AUTH_EMAIL, $("lockPass").value); $("lockPass").value = ""; }
+      catch (err) {
+        const c = err && err.code || "";
+        $("lockErr").textContent =
+          /invalid-credential|wrong-password|user-not-found|invalid-login/.test(c) ? "Contraseña incorrecta" :
+          /too-many/.test(c) ? "Demasiados intentos. Esperá unos minutos." :
+          /network/.test(c) ? "Sin conexión" :
+          /operation-not-allowed|configuration-not-found/.test(c) ? "Falta activar la contraseña en Firebase" :
+          "No se pudo entrar";
+      }
+      btn.disabled = false;
+    });
+  } catch { $("syncTxt").textContent = "Solo este dispositivo"; $("lock").hidden = true; generarFijos(); }
+} else { $("lock").hidden = true; generarFijos(); }
 </script>
 </body>
 </html>
